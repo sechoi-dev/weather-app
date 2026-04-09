@@ -1,28 +1,35 @@
 import { useState } from 'react'
 import './App.css'
 import SearchBar from './components/SearchBar'
+import RecentLocations from './components/RecentLocations'
 
 const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY
+const MAX_RECENT = 5
 
 function App() {
   const [weather, setWeather] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [unit, setUnit] = useState('metric')
+  const [recentLocations, setRecentLocations] = useState(() =>
+    JSON.parse(localStorage.getItem('recentLocations') || '[]')
+  )
 
-  const handleSearch = async (city) => {
+  const fetchWeather = async (city, selectedUnit = unit) => {
     setLoading(true)
     setError(null)
     setWeather(null)
 
     try {
       const res = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=metric&appid=${API_KEY}`
+        `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=${selectedUnit}&appid=${API_KEY}`
       )
       if (!res.ok) {
         throw new Error(res.status === 404 ? 'City not found.' : 'Something went wrong.')
       }
       const data = await res.json()
       setWeather(data)
+      addRecentLocation(city)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -30,21 +37,60 @@ function App() {
     }
   }
 
+  const addRecentLocation = (city) => {
+    setRecentLocations(prev => {
+      const filtered = prev.filter(loc => loc.toLowerCase() !== city.toLowerCase())
+      const updated = [city, ...filtered].slice(0, MAX_RECENT)
+      localStorage.setItem('recentLocations', JSON.stringify(updated))
+      return updated
+    })
+  }
+
+  const handleSearch = (city) => fetchWeather(city)
+
+  const handleUnitToggle = () => {
+    const newUnit = unit === 'metric' ? 'imperial' : 'metric'
+    setUnit(newUnit)
+    if (weather) fetchWeather(weather.name, newUnit)
+  }
+
+  const tempUnit = unit === 'metric' ? '°C' : '°F'
+
   return (
     <div className="app">
-      <h1>Weather Dashboard</h1>
+      <header className="app-header">
+        <h1>Weather Dashboard</h1>
+        <button className="unit-toggle" onClick={handleUnitToggle}>
+          {unit === 'metric' ? '°C' : '°F'}
+        </button>
+      </header>
+
       <SearchBar onSearch={handleSearch} />
+
+      {recentLocations.length > 0 && (
+        <RecentLocations locations={recentLocations} onSelect={handleSearch} />
+      )}
+
       {loading && <p>Loading...</p>}
-      {error && <p className="error">{error}</p>}
-      {weather && (
+
+      {error && (
+        <div className="error-card">
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading && weather && (
         <div className="weather-result">
           <h2>{weather.name}, {weather.sys.country}</h2>
-          <p>{weather.weather[0].description}</p>
-          <p>{weather.main.temp}°C</p>
+          <p className="description">{weather.weather[0].description}</p>
+          <p className="temp">{weather.main.temp}{tempUnit}</p>
+          <p>Feels like {weather.main.feels_like}{tempUnit}</p>
+          <p>Humidity: {weather.main.humidity}%</p>
+          <p>Wind: {weather.wind.speed} {unit === 'metric' ? 'm/s' : 'mph'}</p>
         </div>
       )}
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
